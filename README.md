@@ -73,3 +73,43 @@ TELEGRAM_QUIET=1
 ```
 
 On first run, it will ask for your phone number and Telegram login code, then create a local `.session` file. Keep that session file private.
+
+## Keep It Running After SSH Disconnect
+
+Run the forwarder once in the foreground first, because the first run may need phone number, login code, and two-step verification password input:
+
+```bash
+python3 telegram_forwarder.py --list-dialogs
+```
+
+After the `.session` file exists, start it in the background with no terminal logs:
+
+```bash
+./scripts/start_background.sh
+```
+
+Check or stop it:
+
+```bash
+./scripts/status_background.sh
+./scripts/stop_background.sh
+```
+
+The background script uses `nohup`, redirects output to `/dev/null`, and stores only a local `telegram_forwarder.pid` process ID file. It does not create a log file.
+
+For restart-on-crash and restart-after-reboot on a Linux server, use the systemd user-service example:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/telegram-forwarder.service.example ~/.config/systemd/user/telegram-forwarder.service
+```
+
+Edit the copied service file and replace `/absolute/path/to/telegram_forwarder` with this repo's absolute path on the server. Then run:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now telegram-forwarder.service
+loginctl enable-linger "$USER"
+```
+
+This service also discards stdout and stderr with `StandardOutput=null` and `StandardError=null`.

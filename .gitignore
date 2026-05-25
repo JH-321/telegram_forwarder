@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.session
 *.session-journal
+*.pid
+nohup.out
 .omx
 venv
 .venv

@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram private alert forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/absolute/path/to/telegram_forwarder
+ExecStart=/absolute/path/to/telegram_forwarder/venv/bin/python /absolute/path/to/telegram_forwarder/telegram_forwarder.py --quiet
+Restart=always
+RestartSec=10
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=default.target
