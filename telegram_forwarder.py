@@ -13,13 +13,16 @@ from typing import Any
 
 
 DEFAULT_SESSION = "telegram_forwarder"
+QUIET = False
 
 
 class TelegramError(RuntimeError):
     """Raised when the forwarder cannot be configured or started."""
 
 
-def log_event(message: str) -> None:
+def log_event(message: str, *, force: bool = False) -> None:
+    if QUIET and not force:
+        return
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now}] {message}", flush=True)
 
@@ -34,6 +37,7 @@ class ForwarderConfig:
     mode: str
     dry_run: bool
     list_dialogs: bool
+    quiet: bool
 
 
 def load_env_file(path: Path) -> None:
@@ -79,6 +83,11 @@ def require_mode(value: str) -> str:
     if value not in {"copy", "forward"}:
         raise TelegramError("TELEGRAM_FORWARD_MODE must be copy or forward.")
     return value
+
+
+def env_flag(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def entity_label(entity: Any) -> str:
@@ -137,6 +146,9 @@ async def print_dialogs(client: Any) -> None:
 
 
 async def run_forwarder(config: ForwarderConfig) -> None:
+    global QUIET
+    QUIET = config.quiet
+
     try:
         from telethon import TelegramClient, events
     except ImportError as exc:
@@ -231,6 +243,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print visible chats to help find source and target IDs",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="suppress status logs; errors and --list-dialogs output still print",
+    )
     return parser
 
 
@@ -254,6 +271,7 @@ def config_from_args(argv: list[str] | None = None) -> ForwarderConfig:
         mode=require_mode(args.mode or os.getenv("TELEGRAM_FORWARD_MODE", "copy")),
         dry_run=args.dry_run,
         list_dialogs=args.list_dialogs,
+        quiet=args.quiet or env_flag("TELEGRAM_QUIET"),
     )
 
 

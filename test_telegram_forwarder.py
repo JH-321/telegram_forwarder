@@ -39,6 +39,7 @@ class TelegramForwarderTests(unittest.TestCase):
                         "TELEGRAM_SOURCE_CHAT=@source_bot",
                         "TELEGRAM_TARGET_CHAT=-100777",
                         "TELEGRAM_FORWARD_MODE=forward",
+                        "TELEGRAM_QUIET=1",
                     ]
                 ),
                 encoding="utf-8",
@@ -52,6 +53,17 @@ class TelegramForwarderTests(unittest.TestCase):
         self.assertEqual(config.source_chat, "@source_bot")
         self.assertEqual(config.target_chat, -100777)
         self.assertEqual(config.mode, "forward")
+        self.assertTrue(config.quiet)
+
+    def test_log_event_respects_quiet_mode(self) -> None:
+        with patch("telegram_forwarder.print") as mocked_print:
+            telegram_forwarder.QUIET = True
+            telegram_forwarder.log_event("hidden")
+            telegram_forwarder.log_event("visible", force=True)
+            telegram_forwarder.QUIET = False
+
+        self.assertEqual(mocked_print.call_count, 1)
+        self.assertIn("visible", mocked_print.call_args.args[0])
 
     def test_mirror_message_copies_by_default(self) -> None:
         async def run() -> None:

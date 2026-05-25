@@ -60,4 +60,16 @@ When a message is copied or forwarded, it prints:
 [2026-05-25 17:41:03] Mirrored source message #123 -> target message #456
 ```
 
+The app does not write a log file. It only prints to the terminal. To run without status logs:
+
+```bash
+python3 telegram_forwarder.py --quiet
+```
+
+Or set:
+
+```bash
+TELEGRAM_QUIET=1
+```
+
 On first run, it will ask for your phone number and Telegram login code, then create a local `.session` file. Keep that session file private.
