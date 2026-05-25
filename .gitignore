@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.session
+*.session-journal
+.omx
+venv
+.venv
+env
+venv/*
