@@ -17,7 +17,6 @@ QUIET = False
 PRICE_SPIKES_ROUTE = "Price spikes"
 NEW_ENTRIES_ROUTE = "New entries"
 DEFAULT_ROUTE = "default"
-ROUTE_PREFIXES = (PRICE_SPIKES_ROUTE, NEW_ENTRIES_ROUTE)
 
 
 class TelegramError(RuntimeError):
@@ -126,10 +125,9 @@ def sent_message_label(sent: Any) -> str:
 
 def route_label_for_text(text: str | None) -> str:
     stripped = (text or "").lstrip()
-    for prefix in ROUTE_PREFIXES:
-        if stripped.startswith(prefix):
-            return prefix
-    return DEFAULT_ROUTE
+    if stripped.startswith(PRICE_SPIKES_ROUTE):
+        return PRICE_SPIKES_ROUTE
+    return NEW_ENTRIES_ROUTE
 
 
 def target_specs_from_config(config: ForwarderConfig) -> dict[str, str | int]:
@@ -276,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-chat",
-        help="fallback destination for messages that do not match a routed prefix",
+        help="legacy fallback destination when a routed target is missing",
     )
     parser.add_argument(
         "--price-spikes-target-chat",
@@ -284,7 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--new-entries-target-chat",
-        help="destination for messages starting with 'New entries'",
+        help="destination for every message that does not start with 'Price spikes'",
     )
     parser.add_argument("--session", help="Telethon session file name")
     parser.add_argument(

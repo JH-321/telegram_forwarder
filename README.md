@@ -29,8 +29,8 @@ Fields:
 
 - `TELEGRAM_SOURCE_CHAT`: the private chat where the alert bot sends messages, usually the bot username like `@source_alert_bot`.
 - `TELEGRAM_PRICE_SPIKES_TARGET_CHAT`: destination for alerts that start with `Price spikes`.
-- `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: destination for alerts that start with `New entries`.
-- `TELEGRAM_TARGET_CHAT`: optional fallback destination for alerts that do not match a routed prefix.
+- `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: destination for every alert that does not start with `Price spikes`.
+- `TELEGRAM_TARGET_CHAT`: optional legacy fallback. Leave it empty when both routed targets are set.
 - `TELEGRAM_FORWARD_MODE=copy`: sends a clean copy without a forwarded-from header.
 - `TELEGRAM_FORWARD_MODE=forward`: preserves Telegram's forwarded message header.
 
@@ -53,15 +53,16 @@ Expected startup logs look like this:
 [2026-05-25 17:40:00] Connecting to Telegram...
 [2026-05-25 17:40:01] Connected to Telegram as: Your Name (123456789)
 [2026-05-25 17:40:01] Source ready: Source Alert Bot (123456789)
-[2026-05-25 17:40:01] Target ready: Alerts Room (-1001234567890)
+[2026-05-25 17:40:01] Price spikes target ready: Price Room (-1001111111111)
+[2026-05-25 17:40:01] New entries target ready: Entries Room (-1002222222222)
 [2026-05-25 17:40:01] Forwarder is ready. Waiting for new source messages...
 ```
 
 When a message is copied or forwarded, it prints:
 
 ```text
-[2026-05-25 17:41:03] Received source message #123; copying to target...
-[2026-05-25 17:41:03] Mirrored source message #123 -> target message #456
+[2026-05-25 17:41:03] Received source message #123; copying to Price spikes target...
+[2026-05-25 17:41:03] Mirrored source message #123 via Price spikes route -> target message #456
 ```
 
 The app does not write a log file. It only prints to the terminal. To run without status logs:

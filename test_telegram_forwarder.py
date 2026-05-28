@@ -70,10 +70,10 @@ class TelegramForwarderTests(unittest.TestCase):
         )
         self.assertEqual(
             telegram_forwarder.route_label_for_text("Other alert"),
-            telegram_forwarder.DEFAULT_ROUTE,
+            telegram_forwarder.NEW_ENTRIES_ROUTE,
         )
 
-    def test_select_target_for_text_uses_prefix_targets_and_default_fallback(self) -> None:
+    def test_select_target_for_text_sends_non_price_to_new_entries(self) -> None:
         targets = {
             telegram_forwarder.DEFAULT_ROUTE: "default-room",
             telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room",
@@ -90,7 +90,7 @@ class TelegramForwarderTests(unittest.TestCase):
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Something else", targets),
-            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
+            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
         )
 
     def test_select_target_for_text_skips_unmatched_without_default(self) -> None:
@@ -99,6 +99,18 @@ class TelegramForwarderTests(unittest.TestCase):
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Something else", targets),
             (None, None),
+        )
+
+    def test_select_target_for_text_keeps_legacy_default_fallback(self) -> None:
+        targets = {telegram_forwarder.DEFAULT_ROUTE: "default-room"}
+
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Price spikes now", targets),
+            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
+        )
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Something else", targets),
+            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
         )
 
     def test_log_event_respects_quiet_mode(self) -> None:
