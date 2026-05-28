@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 
 DEFAULT_SESSION = "telegram_forwarder"
@@ -36,13 +36,27 @@ class ForwarderConfig:
     api_hash: str
     source_chat: str | int | None
     target_chat: str | int | None
+    target_topic_id: int | None
     price_spikes_target_chat: str | int | None
+    price_spikes_topic_id: int | None
     new_entries_target_chat: str | int | None
+    new_entries_topic_id: int | None
     session: str
     mode: str
     dry_run: bool
     list_dialogs: bool
+    list_topics: bool
     quiet: bool
+
+
+class TargetSpec(NamedTuple):
+    chat: str | int
+    topic_id: int | None = None
+
+
+class ResolvedTarget(NamedTuple):
+    chat: Any
+    topic_id: int | None = None
 
 
 def load_env_file(path: Path) -> None:
@@ -90,6 +104,24 @@ def require_mode(value: str) -> str:
     return value
 
 
+def parse_topic_id(value: str | None) -> int | None:
+    if value is None:
+        return None
+
+    stripped = value.strip()
+    if not stripped:
+        return None
+
+    try:
+        topic_id = int(stripped)
+    except ValueError as exc:
+        raise TelegramError("Topic IDs must be numbers.") from exc
+
+    if topic_id < 1:
+        raise TelegramError("Topic IDs must be positive numbers.")
+    return topic_id
+
+
 def env_flag(name: str) -> bool:
     value = os.getenv(name, "").strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -130,13 +162,27 @@ def route_label_for_text(text: str | None) -> str:
     return NEW_ENTRIES_ROUTE
 
 
-def target_specs_from_config(config: ForwarderConfig) -> dict[str, str | int]:
-    targets = {
-        DEFAULT_ROUTE: config.target_chat,
-        PRICE_SPIKES_ROUTE: config.price_spikes_target_chat,
-        NEW_ENTRIES_ROUTE: config.new_entries_target_chat,
-    }
-    return {label: target for label, target in targets.items() if target is not None}
+def topic_reply_to(topic_id: int | None) -> int | None:
+    if topic_id is None or topic_id == 1:
+        return None
+    return topic_id
+
+
+def target_specs_from_config(config: ForwarderConfig) -> dict[str, TargetSpec]:
+    targets: dict[str, TargetSpec] = {}
+
+    if config.target_chat is not None:
+        targets[DEFAULT_ROUTE] = TargetSpec(config.target_chat, config.target_topic_id)
+
+    price_chat = config.price_spikes_target_chat or config.target_chat
+    if price_chat is not None:
+        targets[PRICE_SPIKES_ROUTE] = TargetSpec(price_chat, config.price_spikes_topic_id)
+
+    entries_chat = config.new_entries_target_chat or config.target_chat
+    if entries_chat is not None:
+        targets[NEW_ENTRIES_ROUTE] = TargetSpec(entries_chat, config.new_entries_topic_id)
+
+    return targets
 
 
 def select_target_for_text(
@@ -154,9 +200,10 @@ def select_target_for_text(
 async def mirror_message(
     client: Any,
     event: Any,
-    target: Any,
+    target: ResolvedTarget,
     *,
     mode: str,
+    source: Any = None,
     dry_run: bool = False,
 ) -> Any:
     if dry_run:
@@ -164,10 +211,36 @@ async def mirror_message(
         log_event(f"Dry run: would {mode} message: {preview[:120]}")
         return None
 
+    reply_to = topic_reply_to(target.topic_id)
     if mode == "forward":
-        return await client.forward_messages(target, event.message)
+        if reply_to is not None:
+            return await forward_message_to_topic(client, event, source, target.chat, reply_to)
+        return await client.forward_messages(target.chat, event.message)
 
-    return await client.send_message(target, event.message)
+    return await client.send_message(target.chat, event.message, reply_to=reply_to)
+
+
+async def forward_message_to_topic(
+    client: Any,
+    event: Any,
+    source: Any,
+    target_chat: Any,
+    topic_id: int,
+) -> Any:
+    from telethon import helpers
+    from telethon.tl.functions.messages import ForwardMessagesRequest
+
+    from_peer = await client.get_input_entity(source or event.message.peer_id)
+    to_peer = await client.get_input_entity(target_chat)
+    return await client(
+        ForwardMessagesRequest(
+            from_peer=from_peer,
+            id=[event.message.id],
+            to_peer=to_peer,
+            random_id=[helpers.generate_random_long()],
+            top_msg_id=topic_id,
+        )
+    )
 
 
 async def print_dialogs(client: Any) -> None:
@@ -176,6 +249,27 @@ async def print_dialogs(client: Any) -> None:
         entity_id = getattr(dialog, "id", getattr(entity, "id", ""))
         name = dialog.name or entity_label(entity)
         print(f"{entity_id}\t{dialog.is_user=}\t{dialog.is_group=}\t{dialog.is_channel=}\t{name}")
+
+
+async def print_topics(client: Any, chat: str | int) -> None:
+    from telethon.tl.functions.messages import GetForumTopicsRequest
+
+    peer = await client.get_input_entity(chat)
+    result = await client(
+        GetForumTopicsRequest(
+            peer=peer,
+            offset_date=None,
+            offset_id=0,
+            offset_topic=0,
+            limit=100,
+        )
+    )
+    for topic in result.topics:
+        title = getattr(topic, "title", "")
+        topic_id = getattr(topic, "id", "")
+        closed = "closed" if getattr(topic, "closed", False) else "open"
+        hidden = " hidden" if getattr(topic, "hidden", False) else ""
+        print(f"{topic_id}\t{closed}{hidden}\t{title}")
 
 
 async def run_forwarder(config: ForwarderConfig) -> None:
@@ -205,6 +299,15 @@ async def run_forwarder(config: ForwarderConfig) -> None:
             log_event("Finished listing dialogs")
             return
 
+        if config.list_topics:
+            topic_chat = config.target_chat or config.price_spikes_target_chat or config.new_entries_target_chat
+            if topic_chat is None:
+                raise TelegramError("Set TELEGRAM_TARGET_CHAT or a routed target chat to list topics.")
+            log_event(f"Listing forum topics for: {topic_chat}")
+            await print_topics(client, topic_chat)
+            log_event("Finished listing topics")
+            return
+
         if config.source_chat is None:
             raise TelegramError("Set TELEGRAM_SOURCE_CHAT or pass --source-chat.")
         target_specs = target_specs_from_config(config)
@@ -218,11 +321,13 @@ async def run_forwarder(config: ForwarderConfig) -> None:
         source = await client.get_entity(config.source_chat)
         log_event(f"Source ready: {entity_label(source)}")
 
-        targets: dict[str, Any] = {}
+        targets: dict[str, ResolvedTarget] = {}
         for label, target_spec in target_specs.items():
-            log_event(f"Resolving {label} target chat: {target_spec}")
-            targets[label] = await client.get_entity(target_spec)
-            log_event(f"{label} target ready: {entity_label(targets[label])}")
+            topic_suffix = f" topic {target_spec.topic_id}" if target_spec.topic_id else ""
+            log_event(f"Resolving {label} target chat: {target_spec.chat}{topic_suffix}")
+            target_entity = await client.get_entity(target_spec.chat)
+            targets[label] = ResolvedTarget(target_entity, target_spec.topic_id)
+            log_event(f"{label} target ready: {entity_label(target_entity)}{topic_suffix}")
 
         action = "forwarding" if config.mode == "forward" else "copying"
         dry_run_suffix = " (dry run; no messages will be sent)" if config.dry_run else ""
@@ -247,6 +352,7 @@ async def run_forwarder(config: ForwarderConfig) -> None:
                     event,
                     target,
                     mode=config.mode,
+                    source=source,
                     dry_run=config.dry_run,
                 )
             except Exception as exc:  # Telethon exposes many runtime RPC errors.
@@ -277,12 +383,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="legacy fallback destination when a routed target is missing",
     )
     parser.add_argument(
+        "--target-topic-id",
+        help="optional forum topic ID for --target-chat",
+    )
+    parser.add_argument(
         "--price-spikes-target-chat",
         help="destination for messages starting with 'Price spikes'",
     )
     parser.add_argument(
+        "--price-spikes-topic-id",
+        help="forum topic ID for Price spikes messages",
+    )
+    parser.add_argument(
         "--new-entries-target-chat",
         help="destination for every message that does not start with 'Price spikes'",
+    )
+    parser.add_argument(
+        "--new-entries-topic-id",
+        help="forum topic ID for non-Price spikes messages",
     )
     parser.add_argument("--session", help="Telethon session file name")
     parser.add_argument(
@@ -300,6 +418,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-dialogs",
         action="store_true",
         help="print visible chats to help find source and target IDs",
+    )
+    parser.add_argument(
+        "--list-topics",
+        action="store_true",
+        help="print forum topic IDs for the configured target chat",
     )
     parser.add_argument(
         "--quiet",
@@ -325,16 +448,24 @@ def config_from_args(argv: list[str] | None = None) -> ForwarderConfig:
         api_hash=api_hash,
         source_chat=parse_chat(args.source_chat or os.getenv("TELEGRAM_SOURCE_CHAT")),
         target_chat=parse_chat(args.target_chat or os.getenv("TELEGRAM_TARGET_CHAT")),
+        target_topic_id=parse_topic_id(args.target_topic_id or os.getenv("TELEGRAM_TARGET_TOPIC_ID")),
         price_spikes_target_chat=parse_chat(
             args.price_spikes_target_chat or os.getenv("TELEGRAM_PRICE_SPIKES_TARGET_CHAT")
         ),
+        price_spikes_topic_id=parse_topic_id(
+            args.price_spikes_topic_id or os.getenv("TELEGRAM_PRICE_SPIKES_TOPIC_ID")
+        ),
         new_entries_target_chat=parse_chat(
             args.new_entries_target_chat or os.getenv("TELEGRAM_NEW_ENTRIES_TARGET_CHAT")
+        ),
+        new_entries_topic_id=parse_topic_id(
+            args.new_entries_topic_id or os.getenv("TELEGRAM_NEW_ENTRIES_TOPIC_ID")
         ),
         session=args.session or os.getenv("TELEGRAM_SESSION") or DEFAULT_SESSION,
         mode=require_mode(args.mode or os.getenv("TELEGRAM_FORWARD_MODE", "copy")),
         dry_run=args.dry_run,
         list_dialogs=args.list_dialogs,
+        list_topics=args.list_topics,
         quiet=args.quiet or env_flag("TELEGRAM_QUIET"),
     )
 

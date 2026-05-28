@@ -38,8 +38,11 @@ class TelegramForwarderTests(unittest.TestCase):
                         "TELEGRAM_API_HASH=hash",
                         "TELEGRAM_SOURCE_CHAT=@source_bot",
                         "TELEGRAM_TARGET_CHAT=-100777",
+                        "TELEGRAM_TARGET_TOPIC_ID=10",
                         "TELEGRAM_PRICE_SPIKES_TARGET_CHAT=-100111",
+                        "TELEGRAM_PRICE_SPIKES_TOPIC_ID=111",
                         "TELEGRAM_NEW_ENTRIES_TARGET_CHAT=-100222",
+                        "TELEGRAM_NEW_ENTRIES_TOPIC_ID=222",
                         "TELEGRAM_FORWARD_MODE=forward",
                         "TELEGRAM_QUIET=1",
                     ]
@@ -54,10 +57,43 @@ class TelegramForwarderTests(unittest.TestCase):
         self.assertEqual(config.api_hash, "hash")
         self.assertEqual(config.source_chat, "@source_bot")
         self.assertEqual(config.target_chat, -100777)
+        self.assertEqual(config.target_topic_id, 10)
         self.assertEqual(config.price_spikes_target_chat, -100111)
+        self.assertEqual(config.price_spikes_topic_id, 111)
         self.assertEqual(config.new_entries_target_chat, -100222)
+        self.assertEqual(config.new_entries_topic_id, 222)
         self.assertEqual(config.mode, "forward")
         self.assertTrue(config.quiet)
+
+    def test_target_specs_can_use_one_chat_with_two_topics(self) -> None:
+        config = telegram_forwarder.ForwarderConfig(
+            api_id=1,
+            api_hash="hash",
+            source_chat="@source",
+            target_chat=-100999,
+            target_topic_id=None,
+            price_spikes_target_chat=None,
+            price_spikes_topic_id=111,
+            new_entries_target_chat=None,
+            new_entries_topic_id=222,
+            session="session",
+            mode="copy",
+            dry_run=False,
+            list_dialogs=False,
+            list_topics=False,
+            quiet=True,
+        )
+
+        targets = telegram_forwarder.target_specs_from_config(config)
+
+        self.assertEqual(
+            targets[telegram_forwarder.PRICE_SPIKES_ROUTE],
+            telegram_forwarder.TargetSpec(-100999, 111),
+        )
+        self.assertEqual(
+            targets[telegram_forwarder.NEW_ENTRIES_ROUTE],
+            telegram_forwarder.TargetSpec(-100999, 222),
+        )
 
     def test_route_label_for_text_matches_requested_prefixes(self) -> None:
         self.assertEqual(
@@ -127,12 +163,24 @@ class TelegramForwarderTests(unittest.TestCase):
         async def run() -> None:
             client = AsyncMock()
             event = type("Event", (), {"message": object(), "raw_text": "hello"})()
-            target = object()
+            target = telegram_forwarder.ResolvedTarget(object())
 
             await telegram_forwarder.mirror_message(client, event, target, mode="copy")
 
-            client.send_message.assert_awaited_once_with(target, event.message)
+            client.send_message.assert_awaited_once_with(target.chat, event.message, reply_to=None)
             client.forward_messages.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_mirror_message_copies_to_topic(self) -> None:
+        async def run() -> None:
+            client = AsyncMock()
+            event = type("Event", (), {"message": object(), "raw_text": "hello"})()
+            target = telegram_forwarder.ResolvedTarget(object(), 123)
+
+            await telegram_forwarder.mirror_message(client, event, target, mode="copy")
+
+            client.send_message.assert_awaited_once_with(target.chat, event.message, reply_to=123)
 
         asyncio.run(run())
 
@@ -140,12 +188,42 @@ class TelegramForwarderTests(unittest.TestCase):
         async def run() -> None:
             client = AsyncMock()
             event = type("Event", (), {"message": object(), "raw_text": "hello"})()
-            target = object()
+            target = telegram_forwarder.ResolvedTarget(object())
 
             await telegram_forwarder.mirror_message(client, event, target, mode="forward")
 
-            client.forward_messages.assert_awaited_once_with(target, event.message)
+            client.forward_messages.assert_awaited_once_with(target.chat, event.message)
             client.send_message.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_mirror_message_forwards_to_topic_with_raw_request_helper(self) -> None:
+        async def run() -> None:
+            client = AsyncMock()
+            event = type("Event", (), {"message": object(), "raw_text": "hello"})()
+            target = telegram_forwarder.ResolvedTarget(object(), 123)
+            source = object()
+
+            with patch(
+                "telegram_forwarder.forward_message_to_topic",
+                new_callable=AsyncMock,
+            ) as forward_message_to_topic:
+                await telegram_forwarder.mirror_message(
+                    client,
+                    event,
+                    target,
+                    mode="forward",
+                    source=source,
+                )
+
+            forward_message_to_topic.assert_awaited_once_with(
+                client,
+                event,
+                source,
+                target.chat,
+                123,
+            )
+            client.forward_messages.assert_not_called()
 
         asyncio.run(run())
 

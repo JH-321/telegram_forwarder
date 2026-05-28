@@ -18,9 +18,9 @@ Create Telegram API credentials at https://my.telegram.org/apps, then set these 
 TELEGRAM_API_ID=123456
 TELEGRAM_API_HASH=replace-with-your-api-hash
 TELEGRAM_SOURCE_CHAT=@source_alert_bot
-TELEGRAM_PRICE_SPIKES_TARGET_CHAT=-1001111111111
-TELEGRAM_NEW_ENTRIES_TARGET_CHAT=-1002222222222
-TELEGRAM_TARGET_CHAT=
+TELEGRAM_TARGET_CHAT=-1001234567890
+TELEGRAM_PRICE_SPIKES_TOPIC_ID=111
+TELEGRAM_NEW_ENTRIES_TOPIC_ID=222
 TELEGRAM_FORWARD_MODE=copy
 TELEGRAM_SESSION=telegram_forwarder
 ```
@@ -28,9 +28,10 @@ TELEGRAM_SESSION=telegram_forwarder
 Fields:
 
 - `TELEGRAM_SOURCE_CHAT`: the private chat where the alert bot sends messages, usually the bot username like `@source_alert_bot`.
-- `TELEGRAM_PRICE_SPIKES_TARGET_CHAT`: destination for alerts that start with `Price spikes`.
-- `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: destination for every alert that does not start with `Price spikes`.
-- `TELEGRAM_TARGET_CHAT`: optional legacy fallback. Leave it empty when both routed targets are set.
+- `TELEGRAM_TARGET_CHAT`: the forum-enabled group that contains both topics.
+- `TELEGRAM_PRICE_SPIKES_TOPIC_ID`: topic ID for alerts that start with `Price spikes`.
+- `TELEGRAM_NEW_ENTRIES_TOPIC_ID`: topic ID for every alert that does not start with `Price spikes`.
+- `TELEGRAM_PRICE_SPIKES_TARGET_CHAT` and `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: optional overrides if the routes should use different chats.
 - `TELEGRAM_FORWARD_MODE=copy`: sends a clean copy without a forwarded-from header.
 - `TELEGRAM_FORWARD_MODE=forward`: preserves Telegram's forwarded message header.
 
@@ -38,6 +39,12 @@ If you do not know the source or target IDs, log in once and list visible dialog
 
 ```bash
 python3 telegram_forwarder.py --list-dialogs
+```
+
+If you do not know the topic IDs for the configured target group:
+
+```bash
+python3 telegram_forwarder.py --list-topics
 ```
 
 Run the live forwarder:
@@ -53,8 +60,8 @@ Expected startup logs look like this:
 [2026-05-25 17:40:00] Connecting to Telegram...
 [2026-05-25 17:40:01] Connected to Telegram as: Your Name (123456789)
 [2026-05-25 17:40:01] Source ready: Source Alert Bot (123456789)
-[2026-05-25 17:40:01] Price spikes target ready: Price Room (-1001111111111)
-[2026-05-25 17:40:01] New entries target ready: Entries Room (-1002222222222)
+[2026-05-25 17:40:01] Price spikes target ready: Alerts Group (-1001234567890) topic 111
+[2026-05-25 17:40:01] New entries target ready: Alerts Group (-1001234567890) topic 222
 [2026-05-25 17:40:01] Forwarder is ready. Waiting for new source messages...
 ```
 
