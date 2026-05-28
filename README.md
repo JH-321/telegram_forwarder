@@ -18,7 +18,9 @@ Create Telegram API credentials at https://my.telegram.org/apps, then set these 
 TELEGRAM_API_ID=123456
 TELEGRAM_API_HASH=replace-with-your-api-hash
 TELEGRAM_SOURCE_CHAT=@source_alert_bot
-TELEGRAM_TARGET_CHAT=-1001234567890
+TELEGRAM_PRICE_SPIKES_TARGET_CHAT=-1001111111111
+TELEGRAM_NEW_ENTRIES_TARGET_CHAT=-1002222222222
+TELEGRAM_TARGET_CHAT=
 TELEGRAM_FORWARD_MODE=copy
 TELEGRAM_SESSION=telegram_forwarder
 ```
@@ -26,7 +28,9 @@ TELEGRAM_SESSION=telegram_forwarder
 Fields:
 
 - `TELEGRAM_SOURCE_CHAT`: the private chat where the alert bot sends messages, usually the bot username like `@source_alert_bot`.
-- `TELEGRAM_TARGET_CHAT`: the room, group, or channel that should receive the copied alerts.
+- `TELEGRAM_PRICE_SPIKES_TARGET_CHAT`: destination for alerts that start with `Price spikes`.
+- `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: destination for alerts that start with `New entries`.
+- `TELEGRAM_TARGET_CHAT`: optional fallback destination for alerts that do not match a routed prefix.
 - `TELEGRAM_FORWARD_MODE=copy`: sends a clean copy without a forwarded-from header.
 - `TELEGRAM_FORWARD_MODE=forward`: preserves Telegram's forwarded message header.
 

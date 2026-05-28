@@ -38,6 +38,8 @@ class TelegramForwarderTests(unittest.TestCase):
                         "TELEGRAM_API_HASH=hash",
                         "TELEGRAM_SOURCE_CHAT=@source_bot",
                         "TELEGRAM_TARGET_CHAT=-100777",
+                        "TELEGRAM_PRICE_SPIKES_TARGET_CHAT=-100111",
+                        "TELEGRAM_NEW_ENTRIES_TARGET_CHAT=-100222",
                         "TELEGRAM_FORWARD_MODE=forward",
                         "TELEGRAM_QUIET=1",
                     ]
@@ -52,8 +54,52 @@ class TelegramForwarderTests(unittest.TestCase):
         self.assertEqual(config.api_hash, "hash")
         self.assertEqual(config.source_chat, "@source_bot")
         self.assertEqual(config.target_chat, -100777)
+        self.assertEqual(config.price_spikes_target_chat, -100111)
+        self.assertEqual(config.new_entries_target_chat, -100222)
         self.assertEqual(config.mode, "forward")
         self.assertTrue(config.quiet)
+
+    def test_route_label_for_text_matches_requested_prefixes(self) -> None:
+        self.assertEqual(
+            telegram_forwarder.route_label_for_text("Price spikes on BTC"),
+            telegram_forwarder.PRICE_SPIKES_ROUTE,
+        )
+        self.assertEqual(
+            telegram_forwarder.route_label_for_text("  New entries found"),
+            telegram_forwarder.NEW_ENTRIES_ROUTE,
+        )
+        self.assertEqual(
+            telegram_forwarder.route_label_for_text("Other alert"),
+            telegram_forwarder.DEFAULT_ROUTE,
+        )
+
+    def test_select_target_for_text_uses_prefix_targets_and_default_fallback(self) -> None:
+        targets = {
+            telegram_forwarder.DEFAULT_ROUTE: "default-room",
+            telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room",
+            telegram_forwarder.NEW_ENTRIES_ROUTE: "entries-room",
+        }
+
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Price spikes now", targets),
+            (telegram_forwarder.PRICE_SPIKES_ROUTE, "price-room"),
+        )
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("New entries now", targets),
+            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+        )
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Something else", targets),
+            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
+        )
+
+    def test_select_target_for_text_skips_unmatched_without_default(self) -> None:
+        targets = {telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room"}
+
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Something else", targets),
+            (None, None),
+        )
 
     def test_log_event_respects_quiet_mode(self) -> None:
         with patch("telegram_forwarder.print") as mocked_print:

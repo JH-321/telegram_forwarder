@@ -14,6 +14,10 @@ from typing import Any
 
 DEFAULT_SESSION = "telegram_forwarder"
 QUIET = False
+PRICE_SPIKES_ROUTE = "Price spikes"
+NEW_ENTRIES_ROUTE = "New entries"
+DEFAULT_ROUTE = "default"
+ROUTE_PREFIXES = (PRICE_SPIKES_ROUTE, NEW_ENTRIES_ROUTE)
 
 
 class TelegramError(RuntimeError):
@@ -33,6 +37,8 @@ class ForwarderConfig:
     api_hash: str
     source_chat: str | int | None
     target_chat: str | int | None
+    price_spikes_target_chat: str | int | None
+    new_entries_target_chat: str | int | None
     session: str
     mode: str
     dry_run: bool
@@ -118,6 +124,35 @@ def sent_message_label(sent: Any) -> str:
     return f" -> target messages #{', #'.join(message_ids)}"
 
 
+def route_label_for_text(text: str | None) -> str:
+    stripped = (text or "").lstrip()
+    for prefix in ROUTE_PREFIXES:
+        if stripped.startswith(prefix):
+            return prefix
+    return DEFAULT_ROUTE
+
+
+def target_specs_from_config(config: ForwarderConfig) -> dict[str, str | int]:
+    targets = {
+        DEFAULT_ROUTE: config.target_chat,
+        PRICE_SPIKES_ROUTE: config.price_spikes_target_chat,
+        NEW_ENTRIES_ROUTE: config.new_entries_target_chat,
+    }
+    return {label: target for label, target in targets.items() if target is not None}
+
+
+def select_target_for_text(
+    text: str | None,
+    targets: dict[str, Any],
+) -> tuple[str | None, Any | None]:
+    route_label = route_label_for_text(text)
+    if route_label in targets:
+        return route_label, targets[route_label]
+    if DEFAULT_ROUTE in targets:
+        return DEFAULT_ROUTE, targets[DEFAULT_ROUTE]
+    return None, None
+
+
 async def mirror_message(
     client: Any,
     event: Any,
@@ -174,16 +209,22 @@ async def run_forwarder(config: ForwarderConfig) -> None:
 
         if config.source_chat is None:
             raise TelegramError("Set TELEGRAM_SOURCE_CHAT or pass --source-chat.")
-        if config.target_chat is None:
-            raise TelegramError("Set TELEGRAM_TARGET_CHAT or pass --target-chat.")
+        target_specs = target_specs_from_config(config)
+        if not target_specs:
+            raise TelegramError(
+                "Set TELEGRAM_PRICE_SPIKES_TARGET_CHAT, "
+                "TELEGRAM_NEW_ENTRIES_TARGET_CHAT, or TELEGRAM_TARGET_CHAT."
+            )
 
         log_event(f"Resolving source chat: {config.source_chat}")
         source = await client.get_entity(config.source_chat)
         log_event(f"Source ready: {entity_label(source)}")
 
-        log_event(f"Resolving target chat: {config.target_chat}")
-        target = await client.get_entity(config.target_chat)
-        log_event(f"Target ready: {entity_label(target)}")
+        targets: dict[str, Any] = {}
+        for label, target_spec in target_specs.items():
+            log_event(f"Resolving {label} target chat: {target_spec}")
+            targets[label] = await client.get_entity(target_spec)
+            log_event(f"{label} target ready: {entity_label(targets[label])}")
 
         action = "forwarding" if config.mode == "forward" else "copying"
         dry_run_suffix = " (dry run; no messages will be sent)" if config.dry_run else ""
@@ -193,7 +234,15 @@ async def run_forwarder(config: ForwarderConfig) -> None:
         @client.on(events.NewMessage(chats=source, incoming=True))
         async def handler(event: Any) -> None:
             source_message_id = getattr(event.message, "id", "unknown")
-            log_event(f"Received source message #{source_message_id}; {action} to target...")
+            route_label, target = select_target_for_text(event.raw_text, targets)
+            if target is None:
+                log_event(f"Skipped source message #{source_message_id}; no target route matched")
+                return
+
+            log_event(
+                f"Received source message #{source_message_id}; "
+                f"{action} to {route_label} target..."
+            )
             try:
                 sent = await mirror_message(
                     client,
@@ -206,7 +255,10 @@ async def run_forwarder(config: ForwarderConfig) -> None:
                 log_event(f"Failed to mirror source message #{source_message_id}: {exc}")
                 return
 
-            log_event(f"Mirrored source message #{source_message_id}{sent_message_label(sent)}")
+            log_event(
+                f"Mirrored source message #{source_message_id} "
+                f"via {route_label} route{sent_message_label(sent)}"
+            )
 
         await client.run_until_disconnected()
 
@@ -224,7 +276,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-chat",
-        help="destination group, channel, or private chat ID/username",
+        help="fallback destination for messages that do not match a routed prefix",
+    )
+    parser.add_argument(
+        "--price-spikes-target-chat",
+        help="destination for messages starting with 'Price spikes'",
+    )
+    parser.add_argument(
+        "--new-entries-target-chat",
+        help="destination for messages starting with 'New entries'",
     )
     parser.add_argument("--session", help="Telethon session file name")
     parser.add_argument(
@@ -267,6 +327,12 @@ def config_from_args(argv: list[str] | None = None) -> ForwarderConfig:
         api_hash=api_hash,
         source_chat=parse_chat(args.source_chat or os.getenv("TELEGRAM_SOURCE_CHAT")),
         target_chat=parse_chat(args.target_chat or os.getenv("TELEGRAM_TARGET_CHAT")),
+        price_spikes_target_chat=parse_chat(
+            args.price_spikes_target_chat or os.getenv("TELEGRAM_PRICE_SPIKES_TARGET_CHAT")
+        ),
+        new_entries_target_chat=parse_chat(
+            args.new_entries_target_chat or os.getenv("TELEGRAM_NEW_ENTRIES_TARGET_CHAT")
+        ),
         session=args.session or os.getenv("TELEGRAM_SESSION") or DEFAULT_SESSION,
         mode=require_mode(args.mode or os.getenv("TELEGRAM_FORWARD_MODE", "copy")),
         dry_run=args.dry_run,
