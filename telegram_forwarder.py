@@ -160,7 +160,9 @@ def route_label_for_text(text: str | None) -> str:
     stripped = (text or "").lstrip()
     if stripped.startswith(PRICE_SPIKES_BUY_DROP_PREFIX):
         return PRICE_SPIKES_ROUTE
-    return NEW_ENTRIES_ROUTE
+    if stripped.startswith(NEW_ENTRIES_ROUTE):
+        return NEW_ENTRIES_ROUTE
+    return DEFAULT_ROUTE
 
 
 def topic_reply_to(topic_id: int | None) -> int | None:
@@ -171,8 +173,18 @@ def topic_reply_to(topic_id: int | None) -> int | None:
 
 def target_specs_from_config(config: ForwarderConfig) -> dict[str, TargetSpec]:
     targets: dict[str, TargetSpec] = {}
+    has_routed_config = any(
+        (
+            config.price_spikes_target_chat,
+            config.price_spikes_topic_id,
+            config.new_entries_target_chat,
+            config.new_entries_topic_id,
+        )
+    )
 
-    if config.target_chat is not None:
+    if config.target_chat is not None and (
+        config.target_topic_id is not None or not has_routed_config
+    ):
         targets[DEFAULT_ROUTE] = TargetSpec(config.target_chat, config.target_topic_id)
 
     price_chat = config.price_spikes_target_chat or config.target_chat

@@ -30,7 +30,8 @@ Fields:
 - `TELEGRAM_SOURCE_CHAT`: the private chat where the alert bot sends messages, usually the bot username like `@source_alert_bot`.
 - `TELEGRAM_TARGET_CHAT`: the forum-enabled group that contains both topics.
 - `TELEGRAM_PRICE_SPIKES_TOPIC_ID`: topic ID for alerts that start with `Price spikes` followed by a new line and `📉 [Buy Drop`.
-- `TELEGRAM_NEW_ENTRIES_TOPIC_ID`: topic ID for every other alert.
+- `TELEGRAM_NEW_ENTRIES_TOPIC_ID`: topic ID for alerts that start with `New entries`.
+- `TELEGRAM_TARGET_TOPIC_ID`: optional fallback topic for alerts that match neither route. Leave it empty to skip unmatched alerts.
 - `TELEGRAM_PRICE_SPIKES_TARGET_CHAT` and `TELEGRAM_NEW_ENTRIES_TARGET_CHAT`: optional overrides if the routes should use different chats.
 - `TELEGRAM_FORWARD_MODE=copy`: sends a clean copy without a forwarded-from header.
 - `TELEGRAM_FORWARD_MODE=forward`: preserves Telegram's forwarded message header.

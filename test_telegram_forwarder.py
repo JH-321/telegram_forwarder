@@ -106,6 +106,7 @@ Time: 2026-07-03 14:36:58 UTC"""
 
         targets = telegram_forwarder.target_specs_from_config(config)
 
+        self.assertNotIn(telegram_forwarder.DEFAULT_ROUTE, targets)
         self.assertEqual(
             targets[telegram_forwarder.PRICE_SPIKES_ROUTE],
             telegram_forwarder.TargetSpec(-100999, 111),
@@ -115,6 +116,58 @@ Time: 2026-07-03 14:36:58 UTC"""
             telegram_forwarder.TargetSpec(-100999, 222),
         )
 
+    def test_target_specs_add_default_only_when_fallback_topic_is_set(self) -> None:
+        config = telegram_forwarder.ForwarderConfig(
+            api_id=1,
+            api_hash="hash",
+            source_chat="@source",
+            target_chat=-100999,
+            target_topic_id=333,
+            price_spikes_target_chat=None,
+            price_spikes_topic_id=111,
+            new_entries_target_chat=None,
+            new_entries_topic_id=222,
+            session="session",
+            mode="copy",
+            dry_run=False,
+            list_dialogs=False,
+            list_topics=False,
+            quiet=True,
+        )
+
+        targets = telegram_forwarder.target_specs_from_config(config)
+
+        self.assertEqual(
+            targets[telegram_forwarder.DEFAULT_ROUTE],
+            telegram_forwarder.TargetSpec(-100999, 333),
+        )
+
+    def test_target_specs_keep_legacy_single_target_mode(self) -> None:
+        config = telegram_forwarder.ForwarderConfig(
+            api_id=1,
+            api_hash="hash",
+            source_chat="@source",
+            target_chat=-100999,
+            target_topic_id=None,
+            price_spikes_target_chat=None,
+            price_spikes_topic_id=None,
+            new_entries_target_chat=None,
+            new_entries_topic_id=None,
+            session="session",
+            mode="copy",
+            dry_run=False,
+            list_dialogs=False,
+            list_topics=False,
+            quiet=True,
+        )
+
+        targets = telegram_forwarder.target_specs_from_config(config)
+
+        self.assertEqual(
+            targets[telegram_forwarder.DEFAULT_ROUTE],
+            telegram_forwarder.TargetSpec(-100999, None),
+        )
+
     def test_route_label_for_text_matches_requested_prefixes(self) -> None:
         self.assertEqual(
             telegram_forwarder.route_label_for_text("Price spikes\n📉 [Buy Drop on BTC"),
@@ -122,7 +175,7 @@ Time: 2026-07-03 14:36:58 UTC"""
         )
         self.assertEqual(
             telegram_forwarder.route_label_for_text("Price spikes on BTC"),
-            telegram_forwarder.NEW_ENTRIES_ROUTE,
+            telegram_forwarder.DEFAULT_ROUTE,
         )
         self.assertEqual(
             telegram_forwarder.route_label_for_text("  New entries found"),
@@ -130,10 +183,10 @@ Time: 2026-07-03 14:36:58 UTC"""
         )
         self.assertEqual(
             telegram_forwarder.route_label_for_text("Other alert"),
-            telegram_forwarder.NEW_ENTRIES_ROUTE,
+            telegram_forwarder.DEFAULT_ROUTE,
         )
 
-    def test_select_target_for_text_sends_non_price_to_new_entries(self) -> None:
+    def test_select_target_for_text_uses_only_explicit_route_prefixes(self) -> None:
         targets = {
             telegram_forwarder.DEFAULT_ROUTE: "default-room",
             telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room",
@@ -146,7 +199,7 @@ Time: 2026-07-03 14:36:58 UTC"""
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Price spikes now", targets),
-            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text("New entries now", targets),
@@ -154,7 +207,7 @@ Time: 2026-07-03 14:36:58 UTC"""
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Something else", targets),
-            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+            (telegram_forwarder.DEFAULT_ROUTE, "default-room"),
         )
 
     def test_real_price_spike_samples_route_to_expected_topics(self) -> None:
@@ -165,7 +218,7 @@ Time: 2026-07-03 14:36:58 UTC"""
 
         self.assertEqual(
             telegram_forwarder.select_target_for_text(self.SELL_RISE_ALERT, targets),
-            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+            (None, None),
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text(self.BUY_DROP_ALERT, targets),
@@ -173,7 +226,10 @@ Time: 2026-07-03 14:36:58 UTC"""
         )
 
     def test_select_target_for_text_skips_unmatched_without_default(self) -> None:
-        targets = {telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room"}
+        targets = {
+            telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room",
+            telegram_forwarder.NEW_ENTRIES_ROUTE: "entries-room",
+        }
 
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Something else", targets),
