@@ -15,6 +15,7 @@ from typing import Any, NamedTuple
 DEFAULT_SESSION = "telegram_forwarder"
 QUIET = False
 PRICE_SPIKES_ROUTE = "Price spikes"
+PRICE_SPIKES_BUY_DROP_PREFIX = "Price spikes\n📉 [Buy Drop"
 NEW_ENTRIES_ROUTE = "New entries"
 DEFAULT_ROUTE = "default"
 
@@ -157,7 +158,7 @@ def sent_message_label(sent: Any) -> str:
 
 def route_label_for_text(text: str | None) -> str:
     stripped = (text or "").lstrip()
-    if stripped.startswith(PRICE_SPIKES_ROUTE):
+    if stripped.startswith(PRICE_SPIKES_BUY_DROP_PREFIX):
         return PRICE_SPIKES_ROUTE
     return NEW_ENTRIES_ROUTE
 

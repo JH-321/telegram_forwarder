@@ -97,8 +97,12 @@ class TelegramForwarderTests(unittest.TestCase):
 
     def test_route_label_for_text_matches_requested_prefixes(self) -> None:
         self.assertEqual(
-            telegram_forwarder.route_label_for_text("Price spikes on BTC"),
+            telegram_forwarder.route_label_for_text("Price spikes\n📉 [Buy Drop on BTC"),
             telegram_forwarder.PRICE_SPIKES_ROUTE,
+        )
+        self.assertEqual(
+            telegram_forwarder.route_label_for_text("Price spikes on BTC"),
+            telegram_forwarder.NEW_ENTRIES_ROUTE,
         )
         self.assertEqual(
             telegram_forwarder.route_label_for_text("  New entries found"),
@@ -117,8 +121,12 @@ class TelegramForwarderTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            telegram_forwarder.select_target_for_text("Price spikes now", targets),
+            telegram_forwarder.select_target_for_text("Price spikes\n📉 [Buy Drop now", targets),
             (telegram_forwarder.PRICE_SPIKES_ROUTE, "price-room"),
+        )
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text("Price spikes now", targets),
+            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
         )
         self.assertEqual(
             telegram_forwarder.select_target_for_text("New entries now", targets),
