@@ -9,6 +9,26 @@ import telegram_forwarder
 
 
 class TelegramForwarderTests(unittest.TestCase):
+    SELL_RISE_ALERT = """Price spikes
+📈 [Sell Rise 1h] SK hynix (SKHYNIX)  +867.30%
+
+gate.P: +867.30%
+Buy  | $165.86 -> $1,604.65
+Sell | $1,600.02 -> $1,604.40
+Time: 2026-07-03 14:01:31 UTC"""
+
+    BUY_DROP_ALERT = """Price spikes
+📉 [Buy Drop 30s] EWTB  -45.80%
+
+uniswap | eth: -45.80%
+Buy  | $0.3757 -> $0.1751
+Sell | $0.3231 -> $0.1403
+CA: 0x178c820f862b14f316509ec36b13123da19a6054
+Pool: 0xdc7d8cc3a22fe0ec69770e02931f43451b7b975e
+CMC | DS | GMGN | OKX
+
+Time: 2026-07-03 14:36:58 UTC"""
+
     def test_parse_chat_keeps_usernames_and_converts_ids(self) -> None:
         self.assertEqual(telegram_forwarder.parse_chat("@alert_bot"), "@alert_bot")
         self.assertEqual(telegram_forwarder.parse_chat("-100123"), -100123)
@@ -135,6 +155,21 @@ class TelegramForwarderTests(unittest.TestCase):
         self.assertEqual(
             telegram_forwarder.select_target_for_text("Something else", targets),
             (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+        )
+
+    def test_real_price_spike_samples_route_to_expected_topics(self) -> None:
+        targets = {
+            telegram_forwarder.PRICE_SPIKES_ROUTE: "price-room",
+            telegram_forwarder.NEW_ENTRIES_ROUTE: "entries-room",
+        }
+
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text(self.SELL_RISE_ALERT, targets),
+            (telegram_forwarder.NEW_ENTRIES_ROUTE, "entries-room"),
+        )
+        self.assertEqual(
+            telegram_forwarder.select_target_for_text(self.BUY_DROP_ALERT, targets),
+            (telegram_forwarder.PRICE_SPIKES_ROUTE, "price-room"),
         )
 
     def test_select_target_for_text_skips_unmatched_without_default(self) -> None:
